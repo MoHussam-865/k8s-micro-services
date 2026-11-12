@@ -53,7 +53,7 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: frontend:latest
+          image: mohussam/microcrm-frontend:latest
           imagePullPolicy: IfNotPresent
 
           # ---- Environment Variables ----

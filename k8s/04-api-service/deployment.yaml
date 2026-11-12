@@ -52,7 +52,7 @@ spec:
     spec:
       containers:
         - name: api-service
-          image: api:latest
+          image: mohussam/microcrm-api:latest
           imagePullPolicy: IfNotPresent
 
           # ---- Environment Variables ----
