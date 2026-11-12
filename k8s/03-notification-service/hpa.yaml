@@ -1,0 +1,106 @@
+# =============================================================================
+# HORIZONTAL POD AUTOSCALER (HPA) - Notification Service
+# =============================================================================
+# Purpose:
+#   The HPA automatically adjusts the number of pod replicas based on observed
+#   metrics like CPU utilization or custom metrics (requests/sec, queue depth).
+#
+# This is the "auto" in auto-scaling. Instead of manually running
+# `kubectl scale`, the HPA watches metrics and scales up/down for you.
+#
+# HOW IT WORKS:
+#   1. HPA reads CPU/memory metrics from the Metrics Server (must be installed!)
+#   2. If average CPU > target (70%), HPA increases replicas
+#   3. If average CPU < target for a cooldown period, HPA decreases replicas
+#   4. HPA modifies the Deployment's replicas field → ReplicaSet adjusts pods
+#
+# THE MATH (example):
+#   Current pods: 2
+#   Target CPU: 70%
+#   Actual CPU: 90%
+#   Desired replicas = ceil(2 * 90/70) = ceil(2.57) = 3 pods
+#
+# COOLDOWN (prevents flapping/thrashing):
+#   scaleDown.stabilizationWindowSeconds: 300 (5 min)
+#     → Wait 5 minutes of LOW load before scaling DOWN
+#     → Prevents: scale down → spike → scale up → spike ends → scale down...
+#   scaleUp.stabilizationWindowSeconds: 0
+#     → Scale UP immediately when needed (responsiveness > stability)
+#
+# PREREQUISITES:
+#   The Metrics Server MUST be installed in your cluster:
+#     kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+#   Verify: kubectl top pods -n crm-system
+#   Docker Desktop has it built-in. minikube: `minikube addons enable metrics-server`
+# =============================================================================
+
+apiVersion: autoscaling/v2        # v2 supports custom metrics; v1 only CPU
+kind: HorizontalPodAutoscaler
+metadata:
+  name: notification-service-hpa
+  namespace: crm-system
+  labels:
+    app: microcrm
+spec:
+  # ---- Target ----
+  # Which Deployment does this HPA control?
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: notification-service   # Must match the Deployment name exactly
+
+  # ---- Scaling Range ----
+  minReplicas: 2                 # NEVER scale below 2 (high availability)
+  maxReplicas: 10                # NEVER scale above 10 (cost/safety limit)
+                                 # These are YOUR guardrails. Set based on:
+                                 # - Min: minimum for HA (at least 2 for redundancy)
+                                 # - Max: budget limit OR cluster capacity limit
+
+  # ---- Metrics ----
+  # You can have MULTIPLE metrics. HPA picks the one that requires the MOST pods.
+  # Example: CPU says 3 pods, Memory says 5 pods → HPA scales to 5.
+  metrics:
+    # Metric 1: CPU Utilization
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70  # Target 70% average CPU across all pods
+                                  # If pods average > 70% → scale UP
+                                  # If pods average < 70% → scale DOWN (after cooldown)
+
+    # Metric 2: Memory Utilization (optional, uncomment to enable)
+    # - type: Resource
+    #   resource:
+    #     name: memory
+    #     target:
+    #       type: Utilization
+    #       averageUtilization: 80  # Target 80% average memory
+
+  # ---- Behavior (Scaling Policies) ----
+  # Fine-tune HOW the HPA scales. Added in autoscaling/v2.
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300  # Wait 5 min before scaling down
+      policies:
+        - type: Percent
+          value: 50                     # Remove at most 50% of pods per step
+          periodSeconds: 60             # Per 60-second window
+        - type: Pods
+          value: 1                      # OR remove at most 1 pod per step
+          periodSeconds: 60
+      selectPolicy: Min                 # Use the policy that changes the FEWEST pods
+                                        # (conservative scale-down)
+
+    scaleUp:
+      stabilizationWindowSeconds: 0     # Scale up IMMEDIATELY
+      policies:
+        - type: Percent
+          value: 100                    # Double pods per step
+          periodSeconds: 30
+        - type: Pods
+          value: 2                      # OR add at most 2 pods per step
+          periodSeconds: 30
+      selectPolicy: Max                 # Use the policy that changes the MOST pods
+                                        # (aggressive scale-up → handle spikes fast)

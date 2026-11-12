@@ -1,0 +1,128 @@
+# =============================================================================
+# DEPLOYMENT - API Service (SCALABLE)
+# =============================================================================
+# Purpose:
+#   The API service handles business logic, authentication, and coordinates
+#   between the frontend and database. It's STATELESS → fully scalable.
+#
+# REPLICASET BEHAVIOR (key learning):
+#   When you apply this file with replicas: 2:
+#   1. Deployment creates ReplicaSet "api-service-<hash1>" with 2 pods
+#   2. If you update the image tag and re-apply:
+#      → Deployment creates ReplicaSet "api-service-<hash2>" with new pods
+#      → RollingUpdate gradually shifts traffic from <hash1> to <hash2>
+#      → Old ReplicaSet is kept (scaled to 0) for easy ROLLBACK
+#   3. Rollback: kubectl rollout undo deployment/api-service -n crm-system
+#      → Scales <hash1> back up, scales <hash2> down
+#
+#   This is why Deployments are the standard way to run apps. You get:
+#   - Declarative scaling
+#   - Zero-downtime updates
+#   - Automatic rollbacks
+#   - Version history (kubectl rollout history)
+#   All from a single YAML file. The ReplicaSet is an implementation detail.
+# =============================================================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-service
+  namespace: crm-system
+  labels:
+    app: microcrm
+    tier: backend
+spec:
+  replicas: 2                    # Start with 2 for high availability
+
+  selector:
+    matchLabels:
+      app: api-service
+
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1                # Create 1 extra pod during updates
+      maxUnavailable: 0          # Never drop below desired count
+
+  template:
+    metadata:
+      labels:
+        app: api-service
+        tier: backend
+    spec:
+      containers:
+        - name: api-service
+          image: api:latest
+          imagePullPolicy: IfNotPresent
+
+          # ---- Environment Variables ----
+          env:
+            # Port from ConfigMap
+            - name: PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: crm-config
+                  key: API_PORT
+            # Database URL from Secret
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: crm-secrets
+                  key: DATABASE_URL
+            # Notification service URL from ConfigMap
+            - name: NOTIFICATION_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: crm-config
+                  key: NOTIFICATION_SERVICE_URL
+            # JWT Secret from Secret
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: crm-secrets
+                  key: JWT_SECRET
+            # Admin credentials from Secrets
+            - name: ADMIN_EMAIL
+              valueFrom:
+                configMapKeyRef:
+                  name: crm-config
+                  key: ADMIN_EMAIL
+            - name: ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: crm-secrets
+                  key: ADMIN_PASSWORD
+
+          # ---- Ports ----
+          ports:
+            - containerPort: 4000
+              name: http
+              protocol: TCP
+
+          # ---- Health Checks ----
+          livenessProbe:
+            httpGet:
+              path: /api/health         # API health endpoint
+              port: 4000
+            initialDelaySeconds: 15     # API needs time to run DB migrations
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 4000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+
+          # ---- Resource Limits ----
+          resources:
+            requests:
+              memory: "256Mi"          # API services typically need more memory
+              cpu: "200m"
+            limits:
+              memory: "512Mi"
+              cpu: "1000m"             # 1 full CPU core for bursts

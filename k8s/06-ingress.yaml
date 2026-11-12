@@ -1,0 +1,115 @@
+# =============================================================================
+# INGRESS - External Traffic Entry Point
+# =============================================================================
+# Purpose:
+#   An Ingress is a "smart router" that sits at the edge of your cluster and
+#   routes external HTTP/HTTPS traffic to internal Services based on rules
+#   (hostname, path, headers, etc.).
+#
+# WHY INGRESS INSTEAD OF LOADBALANCER SERVICES?
+#   1. COST: 1 Ingress = 1 cloud LB. Without Ingress, EACH service needs its
+#      own LoadBalancer ($15-20/month each!). Ingress shares one LB.
+#   2. ROUTING: Path-based (/api → backend, / → frontend) or host-based
+#      (api.example.com, app.example.com) routing.
+#   3. TLS: Terminate SSL at the Ingress; services talk plain HTTP internally.
+#   4. MIDDLEWARE: Rate limiting, auth, rewrites, CORS — all at the edge.
+#
+# PREREQUISITE: An Ingress Controller MUST be installed in your cluster.
+#   Popular options:
+#   - NGINX Ingress (most common):  kubectl apply -f https://raw...
+#   - Traefik (Docker Desktop has it built-in)
+#   - AWS Load Balancer Controller (for EKS)
+#   - Istio Gateway (service mesh)
+#
+#   For Docker Desktop: NGINX Ingress is recommended.
+#     kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.10.0/deploy/static/provider/cloud/deploy.yaml
+#
+# HOW TRAFFIC FLOWS:
+#   User → https://crm.example.com → Ingress (TLS termination) →
+#     → Ingress Rule matches host + path →
+#       → / → frontend-service:3000 (Next.js serves UI)
+#       → /api/* → Frontend Next.js proxy → api-service:4000
+#
+#   Wait — why route /api/* through the frontend?
+#   Because of Next.js rewrites! The browser calls /api/* on the same origin,
+#   and Next.js proxies it to the API service internally. This is the same
+#   architecture as the Docker Compose setup.
+#
+#   If you want to bypass the frontend proxy (simpler, faster):
+#   Add a second path rule: /api/* → api-service:4000 directly.
+# =============================================================================
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: crm-ingress
+  namespace: crm-system
+  labels:
+    app: microcrm
+  annotations:
+    # ---- NGINX-Specific Annotations ----
+    # These only work with the NGINX Ingress Controller.
+    # Remove them if using Traefik, Istio, or cloud-specific controllers.
+
+    # Rewrite target: strip the matched path prefix before forwarding.
+    # Not needed here since we match / and forward to /.
+    # nginx.ingress.kubernetes.io/rewrite-target: /
+
+    # Enable CORS for browser access
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+    nginx.ingress.kubernetes.io/cors-allow-origin: "*"
+
+    # Increase proxy timeout for long-running API calls
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
+
+spec:
+  # ---- Ingress Class ----
+  # Tells K8s WHICH Ingress Controller should handle this Ingress.
+  # For NGINX: "nginx"
+  # For AWS: "alb"
+  # For Traefik: "traefik"
+  ingressClassName: nginx
+
+  # ---- Rules ----
+  rules:
+    # Rule 1: Match a specific hostname
+    # Replace "crm.local" with your actual domain (or use for local dev with /etc/hosts)
+    - host: crm.local
+      http:
+        paths:
+          # All traffic goes to the frontend (Next.js handles /api/* proxying internally)
+          - path: /
+            pathType: Prefix          # Prefix: / matches /, /login, /dashboard, etc.
+                                      # Exact: matches EXACTLY / and nothing else
+                                      # ImplementationSpecific: depends on controller
+            backend:
+              service:
+                name: frontend-service  # Routes to the frontend Service
+                port:
+                  number: 3000
+
+    # Optional: Rule 2 — Direct API access (bypasses frontend proxy)
+    # Uncomment this if you want to call the API directly from outside:
+    # - host: api.crm.local
+    #   http:
+    #     paths:
+    #       - path: /
+    #         pathType: Prefix
+    #         backend:
+    #           service:
+    #             name: api-service
+    #             port:
+    #               number: 4000
+
+  # ---- TLS (HTTPS) ----
+  # Uncomment this section when you have TLS certificates.
+  # For local dev with self-signed certs:
+  #   openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+  #     -keyout tls.key -out tls.crt -subj "/CN=crm.local"
+  #   kubectl create secret tls crm-tls --key tls.key --cert tls.crt -n crm-system
+  #
+  # tls:
+  #   - hosts:
+  #       - crm.local
+  #     secretName: crm-tls           # Must be a kubernetes.io/tls Secret

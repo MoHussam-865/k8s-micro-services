@@ -1,0 +1,58 @@
+# =============================================================================
+# CONFIGMAP - Non-Sensitive Configuration
+# =============================================================================
+# Purpose:
+#   A ConfigMap stores configuration data that is NOT sensitive (no passwords,
+#   no API keys). Think of it as a .env file, but managed by Kubernetes.
+#
+# Why use ConfigMaps instead of hardcoding values?
+#   1. SEPARATION OF CONCERNS: Code stays in the image; config stays in K8s.
+#      This follows the "12-Factor App" principle.
+#   2. REUSABILITY:     The same Docker image can run in dev, staging, and prod
+#                       just by mounting different ConfigMaps.
+#   3. HOT-RELOAD*:     Some apps can watch for config changes and reload without
+#                       restarting. (* Depends on how you mount it.)
+#   4. VERSION CONTROL: Config changes are tracked in Git alongside your code.
+#   5. NO REBUILD:      Changing a config value does NOT require rebuilding the
+#                       Docker image — just update the ConfigMap and restart the Pod.
+#
+# What belongs here vs Secrets?
+#   ConfigMap:  Database HOST, service URLs, port numbers, feature flags
+#   Secrets:    Database PASSWORDS, JWT secrets, API keys (we use 01-secrets.yaml)
+#
+# How Pods consume this:
+#   - As ENVIRONMENT VARIABLES (envFrom or individual env keys)
+#   - As MOUNTED FILES (each key becomes a file in a volume)
+#   We use environment variables below because they're simplest for app code.
+# =============================================================================
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: crm-config            # Name used to reference this from Deployments
+  namespace: crm-system       # Must match the namespace we created
+  labels:
+    app: microcrm
+data:
+  # ---- PostgreSQL Connection (non-sensitive parts) ----
+  # The hostname "postgres-service" is the DNS name K8s creates for our
+  # PostgreSQL Service (defined in 02-postgres/service.yaml).
+  # Within the same namespace, you can use just the service name.
+  # Across namespaces, you'd use: postgres-service.crm-system.svc.cluster.local
+  POSTGRES_HOST: "postgres-service"
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: "crm"
+
+  # ---- Service URLs (internal K8s DNS) ----
+  # These are the internal URLs used by services to find each other.
+  # K8s CoreDNS automatically resolves <service-name> to the ClusterIP.
+  API_URL: "http://api-service:4000"
+  NOTIFICATION_SERVICE_URL: "http://notification-service:5000"
+
+  # ---- Ports ----
+  NOTIFICATION_PORT: "5000"
+  API_PORT: "4000"
+  FRONTEND_PORT: "3000"
+
+  # ---- Admin Account (non-sensitive username only; password is in Secrets) ----
+  ADMIN_EMAIL: "admin@crm.local"

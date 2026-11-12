@@ -1,0 +1,31 @@
+# =============================================================================
+# SERVICE - Frontend
+# =============================================================================
+# Purpose:
+#   This service will be the target of our Ingress (the only service exposed
+#   to external traffic). Internally, it load-balances across all frontend pods.
+#
+# Service Type: ClusterIP
+#   We expose the frontend via Ingress, NOT via NodePort or LoadBalancer directly.
+#   This is the production best practice:
+#     Browser → Ingress Controller (NLB/ALB) → Ingress Rules → Service → Pods
+#   The Ingress handles TLS termination, path routing, and host-based routing.
+# =============================================================================
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-service         # DNS: frontend-service.crm-system.svc.cluster.local
+  namespace: crm-system
+  labels:
+    app: microcrm
+    tier: frontend
+spec:
+  type: ClusterIP                # Ingress will route to this internally
+  selector:
+    app: frontend
+  ports:
+    - name: http
+      port: 3000                 # Service port
+      targetPort: 3000           # Container port
+      protocol: TCP

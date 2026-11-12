@@ -1,0 +1,122 @@
+# =============================================================================
+# DEPLOYMENT - PostgreSQL Database
+# =============================================================================
+# Purpose:
+#   A Deployment manages Pods and ReplicaSets. It declares: "I want X identical
+#   pods running at all times" and K8s makes it happen.
+#
+# Deployments vs ReplicaSets (important distinction!):
+#   - ReplicaSet: The LOW-LEVEL controller that ensures N pod replicas exist.
+#     You RARELY create ReplicaSets directly.
+#   - Deployment: The HIGH-LEVEL controller that CREATES and MANAGES ReplicaSets
+#     for you. It adds rolling updates, rollbacks, and version history.
+#
+# Why replicas: 1 for PostgreSQL?
+#   PostgreSQL is a STATEful database. Running 2+ instances writing to the same
+#   data files would cause CORRUPTION. For database HA, use StatefulSet or a
+#   managed service (AWS RDS, Cloud SQL).
+# =============================================================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: crm-system
+  labels:
+    app: microcrm
+    tier: database
+spec:
+  replicas: 1                    # Single instance (database)
+
+  selector:
+    matchLabels:
+      app: postgres
+
+  strategy:
+    type: Recreate               # Required with ReadWriteOnce PVC
+
+  template:
+    metadata:
+      labels:
+        app: postgres
+        tier: database
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          imagePullPolicy: IfNotPresent
+
+          # ---- Environment Variables ----
+          env:
+            # From Secret
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: crm-secrets
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: crm-secrets
+                  key: POSTGRES_PASSWORD
+            # From ConfigMap
+            - name: POSTGRES_DB
+              valueFrom:
+                configMapKeyRef:
+                  name: crm-config
+                  key: POSTGRES_DB
+
+          # ---- Ports ----
+          ports:
+            - containerPort: 5432
+              name: postgres
+              protocol: TCP
+
+          # ---- Health Checks ----
+          # Liveness: is the container alive? Restarts on failure.
+          livenessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - user
+                - -d
+                - crm
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          # Readiness: is the container ready for traffic?
+          readinessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - user
+                - -d
+                - crm
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+
+          # ---- Resource Requests & Limits ----
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+
+          # ---- Volume Mounts ----
+          volumeMounts:
+            - name: postgres-storage
+              mountPath: /var/lib/postgresql/data
+
+      # ---- Volumes ----
+      volumes:
+        - name: postgres-storage
+          persistentVolumeClaim:
+            claimName: postgres-pvc

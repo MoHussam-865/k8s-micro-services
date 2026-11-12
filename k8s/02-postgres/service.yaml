@@ -1,0 +1,65 @@
+# =============================================================================
+# SERVICE - PostgreSQL (Internal ClusterIP)
+# =============================================================================
+# Purpose:
+#   A Service gives a STABLE network identity to a set of Pods. Pods come and go
+#   (different IPs each time), but the Service IP stays the same FOREVER.
+#
+# How Services work:
+#   1. You create a Service with a label selector (e.g., app: postgres)
+#   2. K8s watches for Pods matching those labels
+#   3. K8s creates an Endpoint object listing all matching Pod IPs
+#   4. K8s sets up kube-proxy rules so traffic to the Service IP gets
+#      load-balanced to one of the Pod IPs
+#   5. K8s CoreDNS creates a DNS record: postgres-service.crm-system.svc.cluster.local
+#
+# Service Types (the "type" field):
+#   ClusterIP      (THIS ONE): Internal-only IP. Pods can reach it; internet CANNOT.
+#   NodePort:      Exposes on a static port on EVERY node's IP (30000-32767).
+#                  Good for dev; NOT for production (security, port conflicts).
+#   LoadBalancer:  Provisions an external cloud load balancer (AWS NLB, GCP LB).
+#                  Used for production ingress.
+#   ExternalName:  DNS CNAME alias to external services (e.g., AWS RDS endpoint).
+#
+# Why ClusterIP for PostgreSQL?
+#   The database should NEVER be exposed to the internet. Only our API and
+#   Notification services (running inside the cluster) need to reach it.
+#   ClusterIP keeps it internal, secure, and accessible via stable DNS.
+# =============================================================================
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-service         # THIS is the DNS name! <name>.<namespace>.svc.cluster.local
+  namespace: crm-system
+  labels:
+    app: microcrm
+    tier: database
+spec:
+  # ---- Service Type ----
+  type: ClusterIP                # Internal only. Safe, secure, simple.
+
+  # ---- Pod Selector ----
+  # This MUST match the labels on the PostgreSQL Pods (from deployment.yaml).
+  # All Pods with these labels will receive traffic.
+  selector:
+    app: postgres                # Matches deployment template labels
+
+  # ---- Ports ----
+  ports:
+    - name: postgres
+      port: 5432                 # The port the Service listens on (other pods use this)
+      targetPort: 5432           # The port the CONTAINER listens on
+                                 # Can be different! e.g., port: 80 → targetPort: 5432
+      protocol: TCP
+
+  # ---- Session Affinity ----
+  # None = each request goes to a random pod (default, correct for stateless apps)
+  # ClientIP = requests from same client IP go to same pod
+  # We use None because PostgreSQL has only 1 pod, so this doesn't matter.
+  # sessionAffinity: None        # Default, so we omit it
+
+  # ---- Headless Service? ----
+  # clusterIP: None → "Headless" service. Returns Pod IPs directly via DNS.
+  # Used for StatefulSets where each pod needs a unique identity.
+  # We set clusterIP to default (auto-assigned) because we want a single IP.

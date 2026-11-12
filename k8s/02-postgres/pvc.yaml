@@ -1,0 +1,54 @@
+# =============================================================================
+# PERSISTENT VOLUME CLAIM (PVC) - PostgreSQL Storage
+# =============================================================================
+# Purpose:
+#   A PVC is a "request for storage." Pods are EPHEMERAL (they die and get
+#   replaced), but database data must SURVIVE pod restarts. The PVC gives us
+#   persistent storage that outlives any individual pod.
+#
+# THE PROBLEM:
+#   Without a PVC → Pod dies → Data is GONE → Disaster
+#   With a PVC    → Pod dies → New pod mounts same PVC → Data survives!
+#
+# How it works (the full chain):
+#   PVC (this file)  →  "I need 1Gi of storage"
+#   PV (auto-created) →  "Here's 1Gi on the node's disk / cloud volume"
+#   Pod (deployment)  →  "Mount that PV at /var/lib/postgresql/data"
+#
+# Storage Classes:
+#   We don't specify a storageClassName, so K8s uses the DEFAULT StorageClass.
+#   - Docker Desktop:  hostpath (data stored on your laptop)
+#   - minikube:        hostpath (data stored inside the VM)
+#   - AWS EKS:         gp2 (EBS volume, survives node failures)
+#   - GCP GKE:         standard-rwo (persistent disk)
+#   - Azure AKS:       managed-premium
+#
+# Access Modes:
+#   ReadWriteOnce (RWO): Only ONE pod can read/write at a time.
+#     This is CORRECT for PostgreSQL because:
+#     - PostgreSQL cannot have two instances writing to the same data files
+#     - If you need high-availability PostgreSQL, use a StatefulSet + replication
+#       or a managed service like AWS RDS (which we cover in advanced topics)
+#
+#   ReadOnlyMany (ROX):  Many pods can READ only. Good for shared config/assets.
+#   ReadWriteMany (RWX): Many pods can READ/WRITE. Needs special storage (NFS, Ceph).
+# =============================================================================
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-pvc             # Referenced by the Deployment volumeMount
+  namespace: crm-system
+  labels:
+    app: microcrm
+    tier: database               # "tier" label helps organize by application layer
+spec:
+  accessModes:
+    - ReadWriteOnce              # Only ONE pod can write (required for PostgreSQL)
+  resources:
+    requests:
+      storage: 1Gi               # 1 Gigabyte. Adjust based on expected data growth.
+                                 # You can EXPAND PVCs later (if StorageClass supports it),
+                                 # but you CANNOT shrink them.
+  # volumeMode: Filesystem       # Default. Alternative: Block (raw block device)
+  # storageClassName: ""        # Omitted = use default. Set "" to use no class.

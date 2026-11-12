@@ -1,0 +1,73 @@
+# docker-compose.yml MicroCRM full stack
+# Location: CRM-MS-DevOps/docker-compose.yml
+
+services:
+
+  # -- PostgreSQL Database ------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: crm-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: crm
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d crm"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # -- Notification Service -----------------------------------
+  notification-service:
+    image: notification-service:latest
+    container_name: crm-notification
+    restart: unless-stopped
+    environment:
+      PORT: "5000"
+      DATABASE_URL: postgresql://user:password@postgres:5432/crm
+    ports:
+      - "5000:5000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # -- API Service --------------------------------------------
+  api:
+    image: api:latest
+    container_name: crm-api
+    restart: unless-stopped
+    environment:
+      PORT: "4000"
+      DATABASE_URL: postgresql://user:password@postgres:5432/crm
+      NOTIFICATION_SERVICE_URL: http://notification-service:5000
+      JWT_SECRET: change-me-to-a-secure-random-string
+      ADMIN_EMAIL: admin@crm.local
+      ADMIN_PASSWORD: admin123
+    ports:
+      - "4000:4000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      notification-service:
+        condition: service_started
+
+  # -- Frontend -----------------------------------------------
+  frontend:
+    image: frontend:latest
+    container_name: crm-frontend
+    restart: unless-stopped
+    environment:
+      API_URL: http://api:4000
+      NEXT_PUBLIC_API_URL: http://api:4000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
+volumes:
+  postgres_data:

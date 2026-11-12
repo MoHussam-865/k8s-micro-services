@@ -1,0 +1,102 @@
+# =============================================================================
+# DEPLOYMENT - Frontend (Next.js)
+# =============================================================================
+# Purpose:
+#   The frontend serves the UI and proxies API requests via Next.js rewrites.
+#   It's stateless → scalable horizontally.
+#
+# SPECIAL NOTE ON Next.js IN KUBERNETES:
+#   Next.js has TWO modes:
+#   1. "standalone" output (recommended for K8s):
+#      - next.config.ts → output: "standalone"
+#      - Produces a self-contained server.js + node_modules
+#      - Smaller image, faster startup
+#   2. Full Next.js server (what we use here):
+#      - Runs `next start`
+#      - Larger image, but simpler setup
+#   For production K8s, ALWAYS use standalone mode. We use mode 2 here
+#   to match the existing docker-compose setup.
+#
+# WHY SCALE THE FRONTEND?
+#   - Server-Side Rendering (SSR): Each request hits the Next.js server.
+#     More traffic → need more instances.
+#   - Static pages: If you only serve static files, you can use a CDN instead.
+#   - The Next.js rewrite proxy also runs on each instance, handling /api/* calls.
+# =============================================================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: crm-system
+  labels:
+    app: microcrm
+    tier: frontend
+spec:
+  replicas: 2                    # Scalable frontend. Increase for more SSR capacity.
+
+  selector:
+    matchLabels:
+      app: frontend
+
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+
+  template:
+    metadata:
+      labels:
+        app: frontend
+        tier: frontend
+    spec:
+      containers:
+        - name: frontend
+          image: frontend:latest
+          imagePullPolicy: IfNotPresent
+
+          # ---- Environment Variables ----
+          env:
+            # API_URL: The Next.js server uses this for proxy rewrites.
+            # This is a SERVER-SIDE ONLY variable (no NEXT_PUBLIC_ prefix),
+            # so it NEVER leaks to the browser.
+            - name: API_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: crm-config
+                  key: API_URL
+
+          # ---- Ports ----
+          ports:
+            - containerPort: 3000
+              name: http
+              protocol: TCP
+
+          # ---- Health Checks ----
+          livenessProbe:
+            httpGet:
+              path: /                   # Next.js serves the homepage
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+
+          # ---- Resource Limits ----
+          resources:
+            requests:
+              memory: "256Mi"          # Next.js needs more memory for SSR
+              cpu: "200m"
+            limits:
+              memory: "512Mi"
+              cpu: "1000m"

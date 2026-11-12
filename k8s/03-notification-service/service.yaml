@@ -1,0 +1,35 @@
+# =============================================================================
+# SERVICE - Notification Service (Internal ClusterIP)
+# =============================================================================
+# Purpose:
+#   Exposes the notification pods internally so the API service can reach them.
+#   With replicas: 2, K8s automatically LOAD-BALANCES requests across all
+#   healthy pods (those that pass their Readiness probe).
+#
+# Load Balancing Behavior:
+#   - Default: Random (iptables rules distribute connections)
+#   - With sessionAffinity: ClientIP → same client goes to same pod
+#   - Each TCP connection is independent (no sticky sessions by default)
+#
+# Why ClusterIP and not LoadBalancer?
+#   Only the API service calls this. No external access needed.
+#   We expose only the Frontend via Ingress (later file).
+# =============================================================================
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: notification-service     # DNS: notification-service.crm-system.svc.cluster.local
+  namespace: crm-system
+  labels:
+    app: microcrm
+    tier: backend
+spec:
+  type: ClusterIP
+  selector:
+    app: notification-service    # Routes to pods with this label
+  ports:
+    - name: http
+      port: 5000                 # Service port (what CALLERS use)
+      targetPort: 5000           # Container port (where the app listens)
+      protocol: TCP

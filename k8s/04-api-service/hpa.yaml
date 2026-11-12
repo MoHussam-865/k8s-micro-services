@@ -1,0 +1,66 @@
+# =============================================================================
+# HORIZONTAL POD AUTOSCALER (HPA) - API Service
+# =============================================================================
+# Purpose:
+#   Auto-scales the API service based on CPU usage. The API service is typically
+#   the busiest component — it handles every request from the frontend, runs
+#   business logic, and queries the database.
+#
+# SCALING TRIGGERS FOR API SERVICES:
+#   - CPU: Most common. Request processing uses CPU.
+#   - Memory: Useful if the app caches data in memory.
+#   - Custom metrics: Requests per second (req/s) is often more accurate than CPU.
+#     Requires Prometheus + Prometheus Adapter. Advanced topic.
+#
+# WHEN TO SCALE THE API SERVICE:
+#   - More users → more requests → higher CPU → HPA scales up
+#   - Peak hours (e.g., 9 AM-5 PM) → HPA scales up
+#   - Off hours → HPA scales down → saves resources
+# =============================================================================
+
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: api-service-hpa
+  namespace: crm-system
+  labels:
+    app: microcrm
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: api-service
+
+  minReplicas: 2                 # Minimum HA
+  maxReplicas: 10                # Maximum to protect cluster resources
+
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 50
+          periodSeconds: 60
+        - type: Pods
+          value: 1
+          periodSeconds: 60
+      selectPolicy: Min
+
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 30
+        - type: Pods
+          value: 2
+          periodSeconds: 30
+      selectPolicy: Max

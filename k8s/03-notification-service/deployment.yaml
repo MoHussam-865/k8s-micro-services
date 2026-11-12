@@ -1,0 +1,125 @@
+# =============================================================================
+# DEPLOYMENT - Notification Service (SCALABLE)
+# =============================================================================
+# Purpose:
+#   This is the first STATELESS service we deploy. Unlike PostgreSQL (stateful),
+#   stateless services can be scaled HORIZONTALLY — meaning we can run MULTIPLE
+#   identical copies (replicas) behind a load balancer.
+#
+# What makes a service "stateless"?
+#   - No local persistent data (all data lives in PostgreSQL)
+#   - Any instance can handle any request
+#   - Instances don't know about each other
+#   - Killing one instance doesn't lose any data
+#
+# SCALING THIS SERVICE:
+#   1. MANUAL:   kubectl scale deployment notification-service --replicas=5
+#   2. AUTO:     The HPA (hpa.yaml) auto-scales based on CPU/memory metrics.
+#   3. DECLARATIVE: Change replicas: 3 in this file and re-apply.
+#
+# HOW REPLICASETS WORK HERE:
+#   - You set replicas: 2 in this file
+#   - K8s Deployment creates a ReplicaSet named "notification-service-<hash>"
+#   - The ReplicaSet ensures EXACTLY 2 pods are running
+#   - If a pod dies → ReplicaSet immediately starts a replacement
+#   - If you change replicas: 5 → Deployment creates a NEW ReplicaSet (if image
+#     changed) or scales the existing one
+#   - View ReplicaSets: kubectl get rs -n crm-system
+#   - View their history: kubectl rollout history deployment/notification-service -n crm-system
+# =============================================================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notification-service
+  namespace: crm-system
+  labels:
+    app: microcrm
+    tier: backend
+spec:
+  # ---- REPLICA COUNT (KEY SCALING KNOB!) ----
+  # This is where you control how many instances run.
+  # Start with 2 for basic high availability (if one pod dies, the other serves).
+  # Increase based on load. The HPA can override this automatically.
+  replicas: 2
+
+  # ---- Pod Selection ----
+  selector:
+    matchLabels:
+      app: notification-service
+
+  # ---- Update Strategy ----
+  # RollingUpdate: Replace pods gradually. ZERO downtime!
+  #   maxSurge:        How many EXTRA pods can be created during update (beyond replicas)
+  #   maxUnavailable:  How many pods can be UNAVAILABLE during update
+  # Example: replicas=2, maxSurge=1, maxUnavailable=0
+  #   → K8s creates 1 new pod, waits for it to be Ready, kills 1 old pod, repeats.
+  #   → At minimum 2 pods serving at all times = zero downtime.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1                 # Allow 1 extra pod during rollout
+      maxUnavailable: 0           # NEVER drop below the desired replica count
+
+  template:
+    metadata:
+      labels:
+        app: notification-service
+        tier: backend
+    spec:
+      containers:
+        - name: notification-service
+          image: notification-service:latest
+          imagePullPolicy: IfNotPresent
+# ---- Environment Variables ----
+          env:
+            # Inject PORT from ConfigMap
+            - name: PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: crm-config
+                  key: NOTIFICATION_PORT
+            # Inject DATABASE_URL from Secret
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: crm-secrets
+                  key: DATABASE_URL
+
+          # ---- Ports ----
+          ports:
+            - containerPort: 5000
+              name: http
+              protocol: TCP
+
+          # ---- Health Checks ----
+          # Liveness: restarts deadlocked containers
+          # Readiness: removes sick containers from load balancer without killing
+          livenessProbe:
+            httpGet:
+              path: /health              # Your app MUST expose this endpoint
+              port: 5000
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+
+          # ---- Resource Limits ----
+          # Stateless services need less memory than databases.
+          # Adjust based on observed usage (kubectl top pods).
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "500m"

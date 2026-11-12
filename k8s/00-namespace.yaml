@@ -1,0 +1,28 @@
+# =============================================================================
+# KUBERNETES NAMESPACE
+# =============================================================================
+# Purpose:
+#   A Namespace is like a "virtual cluster" inside your physical K8s cluster.
+#   It isolates resources so that Deployments, Services, Pods etc. from different
+#   teams or environments don't collide with each other.
+#
+# Why use a Namespace?
+#   1. ORGANIZATION: All CRM resources live under one logical group.
+#   2. ISOLATION:   Resources in "crm-system" can't accidentally interfere with
+#                   resources in "default" or "kube-system".
+#   3. RBAC:        You can restrict who can deploy/access resources per namespace.
+#   4. RESOURCE QUOTAS: Limit total CPU/memory a namespace can consume.
+#   5. CLEANUP:     `kubectl delete namespace crm-system` removes EVERYTHING in it.
+#
+# This is a "soft" boundary (Pods can still talk across namespaces via
+# <service>.<namespace>.svc.cluster.local DNS), but it's the first building
+# block of any well-structured K8s project.
+# =============================================================================
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: crm-system           # All our CRM services will live here
+  labels:
+    app: microcrm            # Label to identify this namespace
+    environment: production  # You can change this per environment (dev/staging/prod)

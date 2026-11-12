@@ -1,0 +1,25 @@
+# =============================================================================
+# SERVICE - API Service (Internal ClusterIP)
+# =============================================================================
+# Purpose:
+#   Internal service for the API. The Frontend (via its Next.js proxy) and
+#   potentially other services connect here using the stable DNS name.
+# =============================================================================
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-service              # DNS: api-service.crm-system.svc.cluster.local
+  namespace: crm-system
+  labels:
+    app: microcrm
+    tier: backend
+spec:
+  type: ClusterIP
+  selector:
+    app: api-service
+  ports:
+    - name: http
+      port: 4000
+      targetPort: 4000
+      protocol: TCP
