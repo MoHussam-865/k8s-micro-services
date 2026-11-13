@@ -68,7 +68,7 @@
 - Terminal open at the repository root
 
 ```bash
-git clone <your-repo-url> CRM-MS-DevOps
+git clone https://github.com/MoHussam-865/CRM-MS-DevOps
 cd CRM-MS-DevOps
 ```
 

@@ -93,6 +93,9 @@ k8s-micro-services/
     │
     ├── 05-frontend/             # 6⃣  Presentation layer
     │   ├── deployment.yaml      #     Scalable deployment (replicas: 2+)
+
+```
+
 ## Prerequisites
 
 | Tool | Version | Check Command |
@@ -115,6 +118,10 @@ minikube start --cpus=4 --memory=8192
 minikube addons enable ingress
 minikube addons enable metrics-server
 ```
+
+**Option C - kubeadm (for Production)**
+
+> see kubeadm-installaiton-guide.md
 
 ### Install Ingress Controller (NGINX)
 
@@ -151,6 +158,14 @@ First, build the images from your source code (these must exist before K8s can p
 docker build --build-arg NEXT_PUBLIC_API_URL=http://api-service:4000 -t frontend:latest ./frontend
 docker build -t api:latest ./api-service
 docker build -t notification-service:latest ./notification-service
+```
+
+Or use my public images
+
+```
+mohussam/microcrm-frontend
+mohussam/microcrm-api
+mohussam/microcrm-notification
 ```
 
 > **Important:** The `--build-arg` is different from Docker Compose. In K8s, the frontend's
