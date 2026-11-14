@@ -21,10 +21,10 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
-
+      
   # -- Notification Service -----------------------------------
   notification-service:
-    image: notification-service:latest
+    image: mohussam/microcrm-notification:latest
     container_name: crm-notification
     restart: unless-stopped
     environment:
@@ -38,7 +38,7 @@ services:
 
   # -- API Service --------------------------------------------
   api:
-    image: api:latest
+    image: mohussam/microcrm-api:latest
     container_name: crm-api
     restart: unless-stopped
     environment:
@@ -58,7 +58,7 @@ services:
 
   # -- Frontend -----------------------------------------------
   frontend:
-    image: frontend:latest
+    image: mohussam/microcrm-frontend:latest
     container_name: crm-frontend
     restart: unless-stopped
     environment:
