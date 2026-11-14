@@ -149,6 +149,14 @@ kubectl top nodes
 ---
 ## Quick Start
 
+### One command on master
+
+```bash
+git clone https://github.com/MoHussam-865/k8s-micro-services && \
+cd k8s-micro-services && \
+kubectl apply -f k8s/ --recursive
+```
+
 ### 1. Build Docker Images
 
 First, build the images from your source code (these must exist before K8s can pull them):
@@ -191,7 +199,7 @@ Or — **all at once** (K8s is declarative; it figures out order):
 ```bash
 kubectl apply -f k8s/ --recursive
 ```
-```
+
 
 > **Numbering convention:** Files are applied in numbered order. `00-` first, then `01-`, etc.
 > This ensures dependencies (Namespace → ConfigMap/Secrets → Services) are created before consumers.
@@ -526,3 +534,5 @@ kubectl delete namespace crm-system
 # Frontend:  http://crm.local  (after /etc/hosts entry)
 # Login:     admin@crm.local / admin123
 ```
+
+## 
