@@ -1,0 +1,114 @@
+# =============================================================================
+# PERSISTENT VOLUME (PV) - PostgreSQL Storage for kubeadm
+# =============================================================================
+# Purpose:
+#   A PV is a piece of storage in the cluster provisioned by an administrator.
+#   Unlike dynamic provisioning (cloud / Docker Desktop), kubeadm clusters do
+#   NOT ship with a default StorageClass or provisioner. This PV provides
+#   the storage backend that the PVC (persistentvolumeclaim.yaml) will bind to.
+#
+# THE PROBLEM (kubeadm-specific):
+#   - Cloud clusters (EKS, GKE, AKS) have a default StorageClass that auto-
+#     creates PVs when you apply a PVC. No manual PV needed.
+#   - Docker Desktop / minikube also have a built-in hostpath provisioner.
+#   - kubeadm has NEITHER. Without this PV, the PVC stays in "Pending"
+#     forever because there's no one to create the backing storage.
+#
+# How static provisioning works (the full chain):
+#   PV (this file)  →  "Here's 1Gi of storage on the node at /mnt/data/postgres"
+#   PVC (claim)     →  "I need 1Gi, and I match storageClassName: manual"
+#   K8s binds them  →  "PV and PVC match → they are BOUND"
+#   Pod (deployment)→  "Mount that bound PV at /var/lib/postgresql/data"
+#
+# ── IMPORTANT: Choose YOUR node ──────────────────────────────────────────────
+#   hostPath PVs are NODE-SPECIFIC. The PostgreSQL pod will only run on the
+#   node you specify in "nodeAffinity" below.
+#
+#   Step 1: Pick a worker node for PostgreSQL data:
+#     kubectl get nodes
+#
+#   Step 2: Replace <your-node-name> below with that node's name, e.g.:
+#     - worker-1
+#     - k8s-worker-01
+#     - ubuntu-vm (single-node cluster)
+#
+#   Step 3: SSH into that node and create the data directory:
+#     sudo mkdir -p /mnt/data/postgres
+#     sudo chown -R 999:999 /mnt/data/postgres
+#     # (UID 999 is the default postgres user inside the container)
+#
+# ── Better alternatives for production ───────────────────────────────────────
+#   hostPath works for DEV/TEST but has drawbacks for production:
+#   - Pod is pinned to one node (affinity required)
+#   - No replication or HA
+#   - Data survives pod restarts but NOT node failures
+#
+#   For production kubeadm, consider:
+#   - Rancher Local Path Provisioner  → Dynamic hostPath provisioning
+#   - OpenEBS / Rook (Ceph)          → Distributed, replicated storage
+#   - NFS Subdirectory External       → NFS-backed dynamic PVs
+#   - Longhorn                         → CNCF project, block storage
+# =============================================================================
+
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: postgres-pv
+  labels:
+    app: microcrm
+    tier: database
+    type: local                       # Helps identify this as local storage
+spec:
+  # ---- Storage Class ----
+  # Using "manual" tells Kubernetes this is a STATICALLY provisioned PV.
+  # The PVC must also set storageClassName: "manual" to match.
+  storageClassName: manual
+
+  # ---- Capacity ----
+  capacity:
+    storage: 1Gi                      # Must be >= what the PVC requests
+
+  # ---- Access Modes ----
+  # ReadWriteOnce (RWO): Only ONE pod can read/write at a time.
+  #   Correct for PostgreSQL — two pods writing to the same files = corruption.
+  # ReadOnlyMany (ROX):  Many pods can READ only.
+  # ReadWriteMany (RWX): Many pods can READ/WRITE. Needs special storage (NFS, Ceph).
+  accessModes:
+    - ReadWriteOnce
+
+  # ---- Volume Mode ----
+  # Filesystem = a formatted filesystem (ext4, xfs) mounted into the pod.
+  # Block       = raw block device (for databases that manage their own fs).
+  volumeMode: Filesystem              # Default, fine for PostgreSQL
+
+  # ---- Reclaim Policy ----
+  # Retain:   PV keeps its data even after PVC is deleted. You manually clean up.
+  # Delete:   PV and backing storage are deleted when PVC is deleted.
+  # Recycle:  (Deprecated) Basic scrub and re-use.
+  # We use Retain for safety — you don't want to lose Postgres data accidentally.
+  persistentVolumeReclaimPolicy: Retain
+
+  # ---- Storage Backend ----
+  # hostPath: mounts a directory from the NODE's filesystem into the Pod.
+  #           Good for dev/test on a single-node or specific-node cluster.
+  #
+  # IMPORTANT: Create this directory on the node BEFORE applying the PV:
+  #   sudo mkdir -p /mnt/data/postgres
+  #   sudo chown 999:999 /mnt/data/postgres
+  hostPath:
+    path: /mnt/data/postgres          # Directory on the node
+    type: DirectoryOrCreate           # Create it if it doesn't exist
+
+  # ---- Node Affinity ----
+  # REQUIRED for hostPath PVs. This ensures Kubernetes only schedules the
+  # PostgreSQL pod on the node that actually HAS the data directory.
+  # Replace "your-node-name-here" with your actual node name:
+  #   kubectl get nodes
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - your-node-name-here    # ← CHANGE THIS to your node name

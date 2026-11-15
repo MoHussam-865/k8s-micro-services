@@ -16,12 +16,18 @@
 #   Pod (deployment)  →  "Mount that PV at /var/lib/postgresql/data"
 #
 # Storage Classes:
-#   We don't specify a storageClassName, so K8s uses the DEFAULT StorageClass.
-#   - Docker Desktop:  hostpath (data stored on your laptop)
-#   - minikube:        hostpath (data stored inside the VM)
-#   - AWS EKS:         gp2 (EBS volume, survives node failures)
-#   - GCP GKE:         standard-rwo (persistent disk)
-#   - Azure AKS:       managed-premium
+#   This PVC uses storageClassName: "manual" to MATCH the PV defined in pv.yaml.
+#   This is called "static provisioning" — you manually create both PV and PVC.
+#
+#   Why not use the default StorageClass?
+#   - Docker Desktop:  has a default hostpath provisioner (works without PV)
+#   - minikube:        has a default hostpath provisioner (works without PV)
+#   - Cloud (EKS/GKE): have default cloud-disk provisioners (works without PV)
+#   - kubeadm:         has NO default provisioner → needs a manual PV + PVC pairing
+#
+#   If you later install a provisioner (Local Path, OpenEBS, Rook), you can
+#   change this back to the default by removing storageClassName or setting
+#   it to the provisioner's StorageClass name.
 #
 # Access Modes:
 #   ReadWriteOnce (RWO): Only ONE pod can read/write at a time.
@@ -51,4 +57,6 @@ spec:
                                  # You can EXPAND PVCs later (if StorageClass supports it),
                                  # but you CANNOT shrink them.
   # volumeMode: Filesystem       # Default. Alternative: Block (raw block device)
-  # storageClassName: ""        # Omitted = use default. Set "" to use no class.
+  storageClassName: "manual"     # Matches the PV created in pv.yaml
+                                 # "manual" = static provisioning (kubeadm, no default provisioner)
+                                 # Omitted  = use default StorageClass (Docker Desktop, cloud)
