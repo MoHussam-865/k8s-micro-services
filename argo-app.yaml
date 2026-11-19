@@ -46,7 +46,9 @@ spec:
     # The directory inside the repo where the YAML files reside.
     # If your manifests are at the repo root, use '.'.
     # If they are in a subfolder (e.g. 'overlays/prod'), specify that.
-    path: .
+    path: k8s
+    directory:
+      recurse: true
 
   # --------------------------------------------------------------------------
   #  DESTINATION — where ArgoCD deploys the app inside the cluster.
