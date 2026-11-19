@@ -200,7 +200,6 @@ Or — **all at once** (K8s is declarative; it figures out order):
 kubectl apply -f k8s/ --recursive
 ```
 
-
 > **Numbering convention:** Files are applied in numbered order. `00-` first, then `01-`, etc.
 > This ensures dependencies (Namespace → ConfigMap/Secrets → Services) are created before consumers.
 ### 3. Verify Everything is Running
